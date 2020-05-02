@@ -5,7 +5,7 @@ android {
     compileSdkVersion 28
 
     defaultConfig {
-        applicationId "xds.lib.easyhttp"
+        applicationId "xds.sample.easyhttp"
         minSdkVersion 21
         targetSdkVersion 28
         versionCode 1
@@ -27,4 +27,6 @@ android {
 
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
+    implementation project(":core")
+    implementation 'androidx.annotation:annotation:1.1.0'
 }

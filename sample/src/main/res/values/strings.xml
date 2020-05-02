@@ -1,3 +1,4 @@
 <resources>
-    <string name="app_name">EasyHTTP</string>
+    <string name="app_name">EasyHTTP sample</string>
+    <string name="btn_start_request">Request</string>
 </resources>
