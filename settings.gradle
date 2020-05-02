@@ -1,0 +1,3 @@
+rootProject.name='EasyHTTP'
+include ':sample'
+include ':core'
