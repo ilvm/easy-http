@@ -11,7 +11,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.stream.Collectors;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 
 public final class IOUtils {
 
@@ -47,42 +46,5 @@ public final class IOUtils {
                 return sb.toString();
             }
         }
-    }
-
-    /**
-     * Extracts charset from Content type according to RFC 2045
-     *
-     * @param contentType RFC 2045 compliant MIME string
-     * @return parsed charset or {@link StandardCharsets#UTF_8}
-     */
-    @NonNull
-    public static Charset getCharsetFromContentType(@Nullable String contentType) {
-        return getCharsetFromContentType(contentType, StandardCharsets.UTF_8);
-    }
-
-    /**
-     * Extracts charset from Content type according to RFC 2045
-     *
-     * @param contentType RFC 2045 compliant MIME string
-     * @param fallback    fallback charset if parsing failed
-     * @return parsed charset or fallback
-     */
-    @NonNull
-    public static Charset getCharsetFromContentType(@Nullable String contentType, @NonNull Charset fallback) {
-        if (contentType != null) {
-            final String[] values = contentType.split(";");
-            String charset = null;
-            for (String value : values) {
-                value = value.trim();
-                if (value.toLowerCase().startsWith("charset=")) {
-                    charset = value.substring("charset=".length());
-                }
-            }
-            try {
-                return Charset.forName(charset);
-            } catch (Exception ignored) {
-            }
-        }
-        return fallback;
     }
 }

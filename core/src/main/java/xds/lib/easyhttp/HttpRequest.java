@@ -10,7 +10,6 @@ import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLEncoder;
-import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.zip.GZIPInputStream;
@@ -63,6 +62,9 @@ public abstract class HttpRequest<T> implements Request<T> {
         logcat = new Logcat(getLogPolicy());
     }
 
+    /**
+     * {@inheritDoc}
+     */
     @NonNull
     @WorkerThread
     @Override
@@ -78,7 +80,8 @@ public abstract class HttpRequest<T> implements Request<T> {
 
     @NonNull
     @WorkerThread
-    protected abstract T parse(@NonNull InputStream inputStream, @Nullable String contentType) throws ParseException, UnsupportedEncodingException;
+    protected abstract T parse(@NonNull InputStream inputStream, @Nullable String contentType)
+            throws ParseException, UnsupportedEncodingException;
 
     /**
      * Content type for {@link #POST_REQUEST}.
@@ -162,10 +165,14 @@ public abstract class HttpRequest<T> implements Request<T> {
     @NonNull
     @WorkerThread
     private T doRequest() throws RequestException, ResponseException, ParseException {
-        long startTime = SystemClock.elapsedRealtime();
+
+        final long startTime = SystemClock.elapsedRealtime();
+
         String url = null;
+        int responseCode = -1;
+
         HttpURLConnection connection = null;
-        int responseCode = 0;
+
         try {
             // Apply query to url if necessary.
             url = applyQuery(getUrl());
@@ -182,9 +189,11 @@ public abstract class HttpRequest<T> implements Request<T> {
                 connection.setReadTimeout(getReadTimeout());
             }
             connection.setDoInput(true);
+
             // apply headers.
             applyHeaders(connection);
 
+            // write POST body
             if (POST_REQUEST.equals(requestMethod)) {
                 connection.setDoOutput(true);
 
@@ -201,31 +210,25 @@ public abstract class HttpRequest<T> implements Request<T> {
 
             connection.connect();
 
-            final String contentType = connection.getContentType();
-
             responseCode = connection.getResponseCode();
-            if (responseCode == HttpURLConnection.HTTP_OK) {
-                String encoding = connection.getContentEncoding();
-                InputStream inputStream = connection.getInputStream();
-                if (ENCODING_GZIP.equalsIgnoreCase(encoding)) {
-                    inputStream = new GZIPInputStream(inputStream);
-                } else if (ENCODING_DEFLATE.equalsIgnoreCase(encoding)) {
-                    inputStream = new InflaterInputStream(inputStream, new Inflater(true));
-                }
-                final T result = parse(inputStream, contentType);
-                logcat.d(TAG, "Request result:\n%s", result);
-                return result;
-            } else {
-                String errorMessage;
+            if (responseCode != HttpURLConnection.HTTP_OK) {
                 InputStream errorStream = connection.getErrorStream();
-                Charset charset = IOUtils.getCharsetFromContentType(contentType);
-                if (errorStream != null) {
-                    errorMessage = IOUtils.inputStreamToString(errorStream, charset);
-                } else {
-                    errorMessage = "Unknown server error.";
-                }
+                String errorMessage = errorStream != null ? IOUtils.inputStreamToString(errorStream,
+                        StandardCharsets.UTF_8) : "Unknown server error.";
                 throw new ResponseException(errorMessage, responseCode);
             }
+
+            String encoding = connection.getContentEncoding();
+            InputStream inputStream = connection.getInputStream();
+            if (ENCODING_GZIP.equalsIgnoreCase(encoding)) {
+                inputStream = new GZIPInputStream(inputStream);
+            } else if (ENCODING_DEFLATE.equalsIgnoreCase(encoding)) {
+                inputStream = new InflaterInputStream(inputStream, new Inflater(true));
+            }
+            final T result = parse(inputStream, connection.getContentType());
+            logcat.d(TAG, "Request result:\n%s", result);
+            return result;
+
         } catch (ResponseException | ParseException e) {
             throw e;
         } catch (Throwable e) {

@@ -12,9 +12,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            versionNameSuffix = 'debug'
+        }
         release {
-            minifyEnabled true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            versionNameSuffix = 'release'
         }
     }
 
@@ -25,6 +27,5 @@ android {
 }
 
 dependencies {
-    implementation fileTree(dir: 'libs', include: ['*.jar'])
-    implementation 'androidx.annotation:annotation:1.1.0'
+    compileOnly 'androidx.annotation:annotation:1.1.0'
 }

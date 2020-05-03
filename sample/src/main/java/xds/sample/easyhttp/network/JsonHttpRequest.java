@@ -14,8 +14,8 @@ import xds.lib.easyhttp.util.IOUtils;
 
 public final class JsonHttpRequest extends HttpRequest<String> {
 
-    private static final String HOST = "https://api.exchangeratesapi.io";
-    private static final String PATH = "/latest";
+    private static final String HOST = "https://apidata.mos.ru";
+    private static final String PATH = "/version";
 
     @Override
     protected String getUrl() {
