@@ -11,6 +11,7 @@ import androidx.annotation.WorkerThread;
 import xds.lib.easyhttp.HttpRequest;
 import xds.lib.easyhttp.exception.ParseException;
 import xds.lib.easyhttp.util.IOUtils;
+import xds.lib.easyhttp.util.RetryPolicy;
 
 public final class JsonHttpRequest extends HttpRequest<String> {
 
@@ -33,5 +34,10 @@ public final class JsonHttpRequest extends HttpRequest<String> {
         } catch (IOException | JSONException e) {
             throw new ParseException(e);
         }
+    }
+
+    @Override
+    protected RetryPolicy getRetryPolicy() {
+        return RetryPolicy.create500();
     }
 }

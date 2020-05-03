@@ -28,6 +28,7 @@ import xds.lib.easyhttp.exception.RequestException;
 import xds.lib.easyhttp.exception.ResponseException;
 import xds.lib.easyhttp.util.IOUtils;
 import xds.lib.easyhttp.util.LogPolicy;
+import xds.lib.easyhttp.util.RetryPolicy;
 
 /**
  * The wrapper of http client for work with REST API.
@@ -56,9 +57,11 @@ public abstract class HttpRequest<T> implements Request<T> {
     protected static final String SCHEME_HTTP = "http";
     protected static final String SCHEME_HTTPS = "https";
 
+    private final RetryPolicy retryPolicy;
     private final Logcat logcat;
 
     protected HttpRequest() {
+        retryPolicy = getRetryPolicy();
         logcat = new Logcat(getLogPolicy());
     }
 
@@ -149,9 +152,15 @@ public abstract class HttpRequest<T> implements Request<T> {
         return LogPolicy.ADAPTIVE;
     }
 
-    @WorkerThread
-    protected boolean isTrustEveryone() {
-        return BuildConfig.DEBUG;
+    /**
+     * Get the retry request policy.
+     *
+     * @return instance of {@link RetryPolicy}; default {@code null}.
+     * @see RetryPolicy
+     */
+    @MainThread
+    protected RetryPolicy getRetryPolicy() {
+        return null;
     }
 
     /**
@@ -229,7 +238,15 @@ public abstract class HttpRequest<T> implements Request<T> {
             logcat.d(TAG, "Request result:\n%s", result);
             return result;
 
-        } catch (ResponseException | ParseException e) {
+        } catch (ResponseException e) {
+            if (retryPolicy != null && retryPolicy.checkNeedToRetry(e.getResponseCode())) {
+                logcat.e(TAG, "Request error [code: %s]. Retry: %d",
+                        e.getResponseCode(), retryPolicy.getCount());
+                return doRequest();
+            } else {
+                throw e;
+            }
+        } catch (ParseException e) {
             throw e;
         } catch (Throwable e) {
             throw new RequestException(e.getMessage(), e);
