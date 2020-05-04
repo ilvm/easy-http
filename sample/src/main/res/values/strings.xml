@@ -1,4 +1,6 @@
 <resources>
-    <string name="app_name">EasyHTTP sample</string>
-    <string name="btn_start_request">Request</string>
+    <string name="app_name" translatable="false">EasyHTTP sample</string>
+    <string name="btn_start_request" translatable="false">Request</string>
+    <string name="btn_start_request_async" translatable="false">Request async</string>
+    <string name="txt_result_format" translatable="false">Request ID: %s\n%s</string>
 </resources>

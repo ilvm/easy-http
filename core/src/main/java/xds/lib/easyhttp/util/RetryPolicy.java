@@ -19,7 +19,7 @@ public final class RetryPolicy {
     private final int[] reasons;
     private final Delay delay;
 
-    private int count;
+    private volatile int count;
 
     private RetryPolicy(int count, Delay delay, @Reason int... reasons) {
         this.count = count;

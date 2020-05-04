@@ -1,5 +1,7 @@
 package xds.lib.easyhttp;
 
+import android.os.Handler;
+import android.os.Looper;
 import android.os.SystemClock;
 
 import java.io.IOException;
@@ -12,6 +14,7 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.concurrent.Executor;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.Inflater;
 import java.util.zip.InflaterInputStream;
@@ -23,6 +26,7 @@ import androidx.annotation.MainThread;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.WorkerThread;
+import xds.lib.easyhttp.async.ResponseListener;
 import xds.lib.easyhttp.exception.ParseException;
 import xds.lib.easyhttp.exception.RequestException;
 import xds.lib.easyhttp.exception.ResponseException;
@@ -75,6 +79,25 @@ public abstract class HttpRequest<T> implements Request<T> {
         synchronized (this) {
             return doRequest();
         }
+    }
+
+    @MainThread
+    @Override
+    public void executeAsync(@NonNull Executor executor, @NonNull ResponseListener<T> listener) {
+        executeAsync(executor, null/*use the main looper*/, listener);
+    }
+
+    @Override
+    public void executeAsync(@NonNull Executor executor, @Nullable Handler handler, @NonNull ResponseListener<T> listener) {
+        executor.execute(() -> {
+            Handler handlerResult = handler != null ? handler : new Handler(Looper.getMainLooper());
+            try {
+                final T result = execute();
+                handlerResult.post(() -> listener.onSuccess(result, getRequestId()));
+            } catch (RequestException | ResponseException | ParseException e) {
+                handlerResult.post(() -> listener.onFailed(e, getRequestId()));
+            }
+        });
     }
 
     @NonNull

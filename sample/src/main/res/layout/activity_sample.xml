@@ -12,6 +12,12 @@
         android:layout_height="wrap_content"
         android:text="@string/btn_start_request" />
 
+    <Button
+        android:id="@+id/btn_request_async"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/btn_start_request_async" />
+
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content">
