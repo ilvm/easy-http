@@ -251,7 +251,7 @@ public abstract class HttpRequest<T> implements Request<T> {
             connection.connect();
 
             responseCode = connection.getResponseCode();
-            if (responseCode != HttpURLConnection.HTTP_OK) {
+            if (responseCode < HttpURLConnection.HTTP_OK || responseCode > HttpURLConnection.HTTP_ACCEPTED) {
                 InputStream errorStream = connection.getErrorStream();
                 String errorMessage = errorStream != null ? IOUtils.inputStreamToString(errorStream,
                         StandardCharsets.UTF_8) : "Unknown server error.";
@@ -284,7 +284,7 @@ public abstract class HttpRequest<T> implements Request<T> {
         } finally {
             String format = "request took %d ms (%d)\n URL: %s ";
             long took = SystemClock.elapsedRealtime() - startTime;
-            if (responseCode >= HttpURLConnection.HTTP_OK && responseCode < HttpURLConnection.HTTP_BAD_REQUEST) {
+            if (responseCode >= HttpURLConnection.HTTP_OK && responseCode <= HttpURLConnection.HTTP_ACCEPTED) {
                 logcat.d(TAG, format, took, responseCode, url);
             } else {
                 logcat.e(TAG, format, took, responseCode, url);

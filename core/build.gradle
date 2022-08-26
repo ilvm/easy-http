@@ -2,7 +2,7 @@ apply plugin: 'com.android.library'
 apply plugin: 'maven-publish'
 
 def getVersionName = { ->
-    return "1.1.0"
+    return "1.1.1"
 }
 
 def getArtifactId = { ->
