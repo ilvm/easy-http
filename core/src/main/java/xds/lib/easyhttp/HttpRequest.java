@@ -251,6 +251,7 @@ public abstract class HttpRequest<T> implements Request<T> {
             connection.connect();
 
             responseCode = connection.getResponseCode();
+            logcat.d(TAG, "Request with response code: " + responseCode);
             if (responseCode < HttpURLConnection.HTTP_OK || responseCode > HttpURLConnection.HTTP_ACCEPTED) {
                 InputStream errorStream = connection.getErrorStream();
                 String errorMessage = errorStream != null ? IOUtils.inputStreamToString(errorStream,
