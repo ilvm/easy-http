@@ -13,6 +13,7 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.Executor;
 import java.util.zip.GZIPInputStream;
@@ -51,12 +52,17 @@ public abstract class HttpRequest<T> implements Request<T> {
     /**
      * The data sent to the server with stored in the query string (name/value) of the HTTP request.
      */
-    protected static final String GET_REQUEST = "GET";
+    protected static final String REQUEST_TYPE_GET = "GET";
 
     /**
      * The data sent to the server with POST is stored in the request body of the HTTP request.
      */
-    protected static final String POST_REQUEST = "POST";
+    protected static final String REQUEST_TYPE_POST = "POST";
+
+    /**
+     * The data sent to the server with PUT is stored in the request body of the HTTP request.
+     */
+    protected static final String REQUEST_TYPE_PUT = "PUT";
 
     protected static final String SCHEME_HTTP = "http";
     protected static final String SCHEME_HTTPS = "https";
@@ -110,7 +116,7 @@ public abstract class HttpRequest<T> implements Request<T> {
             throws ParseException, UnsupportedEncodingException;
 
     /**
-     * Content type for {@link #POST_REQUEST}.
+     * Content type for {@link #REQUEST_TYPE_POST} or {@link #REQUEST_TYPE_PUT}.
      */
     @Nullable
     @AnyThread
@@ -119,14 +125,15 @@ public abstract class HttpRequest<T> implements Request<T> {
     }
 
     /**
-     * Get the request method.
+     * Get the request method. {@link #REQUEST_TYPE_GET} as default.
      *
-     * @see #GET_REQUEST
-     * @see #POST_REQUEST
+     * @see #REQUEST_TYPE_GET
+     * @see #REQUEST_TYPE_POST
+     * @see #REQUEST_TYPE_PUT
      */
     @AnyThread
     protected String getRequestMethod() {
-        return GET_REQUEST;
+        return REQUEST_TYPE_GET;
     }
 
     /**
@@ -162,7 +169,7 @@ public abstract class HttpRequest<T> implements Request<T> {
     }
 
     /**
-     * Writes HTTP body for {@link #POST_REQUEST}.
+     * Writes HTTP body for {@link #REQUEST_TYPE_POST} or {@link #REQUEST_TYPE_PUT}.
      */
     @WorkerThread
     protected void writeBody(@NonNull OutputStream os) throws IOException {}
@@ -225,8 +232,9 @@ public abstract class HttpRequest<T> implements Request<T> {
             // apply headers.
             applyHeaders(connection);
 
-            // write POST body
-            if (POST_REQUEST.equals(requestMethod)) {
+            // write POST/PUT body
+            if (REQUEST_TYPE_POST.equalsIgnoreCase(requestMethod) ||
+                    REQUEST_TYPE_PUT.equalsIgnoreCase(requestMethod)) {
                 connection.setDoOutput(true);
 
                 String requestContentType = getRequestContentType();
