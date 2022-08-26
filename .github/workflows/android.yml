@@ -26,6 +26,12 @@ jobs:
           GPR_USERNAME: ${{ github.actor }}
           GPR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Publish to github maven
+        run: ./gradlew publish
+        env:
+          GPR_USERNAME: ${{ github.actor }}
+          GPR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Upload lib
         uses: actions/upload-artifact@v2
         with:
