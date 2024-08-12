@@ -1,19 +1,23 @@
 package xds.lib.easyhttp;
 
+import android.os.Build;
 import android.os.Handler;
-import android.os.Looper;
 import android.os.SystemClock;
+
+import androidx.annotation.AnyThread;
+import androidx.annotation.MainThread;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.WorkerThread;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.Executor;
 import java.util.zip.GZIPInputStream;
@@ -22,11 +26,6 @@ import java.util.zip.InflaterInputStream;
 
 import javax.net.ssl.HttpsURLConnection;
 
-import androidx.annotation.AnyThread;
-import androidx.annotation.MainThread;
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
-import androidx.annotation.WorkerThread;
 import xds.lib.easyhttp.async.ResponseListener;
 import xds.lib.easyhttp.exception.ParseException;
 import xds.lib.easyhttp.exception.RequestException;
@@ -36,87 +35,141 @@ import xds.lib.easyhttp.util.LogPolicy;
 import xds.lib.easyhttp.util.RetryPolicy;
 
 /**
- * The wrapper of http client for work with REST API.
+ * Abstract base class for making HTTP requests with customizable parameters.
  *
- * @see HttpURLConnection
+ * @param <T> The type of response expected from the request.
  */
 public abstract class HttpRequest<T> implements Request<T> {
 
-    private static final String TAG = "HttpRequest";
+    protected final String TAG = getClass().getSimpleName();
 
-    private static final int USE_DEFAULT_TIMEOUT = -1;
+    protected static final String METHOD_GET = "GET";
+    protected static final String METHOD_POST = "POST";
+    protected static final String METHOD_PUT = "PUT";
+
+    private static final int NOT_SET = -1;
+    private static final int DEFAULT_MAX_REDIRECTS = 1;
 
     private static final String ENCODING_GZIP = "gzip";
     private static final String ENCODING_DEFLATE = "deflate";
 
-    /**
-     * The data sent to the server with stored in the query string (name/value) of the HTTP request.
-     */
-    protected static final String REQUEST_TYPE_GET = "GET";
-
-    /**
-     * The data sent to the server with POST is stored in the request body of the HTTP request.
-     */
-    protected static final String REQUEST_TYPE_POST = "POST";
-
-    /**
-     * The data sent to the server with PUT is stored in the request body of the HTTP request.
-     */
-    protected static final String REQUEST_TYPE_PUT = "PUT";
-
-    protected static final String SCHEME_HTTP = "http";
-    protected static final String SCHEME_HTTPS = "https";
+    private static final String LOG_RESULT_FORMAT = "Request took %d ms\n URL: %s";
+    private static final String LOG_ERROR_FORMAT = "Request error took %d ms\n URL: %s";
 
     private final RetryPolicy retryPolicy;
     private final Logcat logcat;
 
+    /** Default constructor for HttpRequest. */
     protected HttpRequest() {
-        retryPolicy = getRetryPolicy();
-        logcat = new Logcat(getLogPolicy());
+        this.retryPolicy = createRetryPolicy();
+        this.logcat = new Logcat(getLogPolicy());
     }
 
-    /**
-     * {@inheritDoc}
-     */
-    @NonNull
+    /** {@inheritDoc} */
     @WorkerThread
-    @Override
-    public T execute() throws RequestException, ResponseException, ParseException {
-        synchronized (this) {
-            return doRequest();
+    public final T execute() throws RequestException, ResponseException, ParseException {
+        try {
+            return executeRequest(getUrl(), 0);
+        } catch (IOException e) {
+            throw new RequestException("IO error during request execution", e);
         }
     }
 
-    @MainThread
-    @Override
-    public void executeAsync(@NonNull Executor executor, @NonNull ResponseListener<T> listener) {
-        executeAsync(executor, null/*use the main looper*/, listener);
-    }
-
-    @Override
-    public void executeAsync(@NonNull Executor executor, @Nullable Handler handler, @NonNull ResponseListener<T> listener) {
+    /** {@inheritDoc} */
+    public final void executeAsync(@NonNull Executor executor, Handler handler,
+            @NonNull ResponseListener<T> listener) {
         executor.execute(() -> {
-            Handler handlerResult = handler != null ? handler : new Handler(Looper.getMainLooper());
+
+            final long startTime = SystemClock.elapsedRealtime();
             try {
                 final T result = execute();
-                handlerResult.post(() -> listener.onSuccess(result, getRequestId()));
+                logcat.d(TAG, LOG_RESULT_FORMAT,
+                        (SystemClock.elapsedRealtime() - startTime), getUrl());
+                postToHandler(handler, () -> listener.onSuccess(result, getRequestId()));
             } catch (RequestException | ResponseException | ParseException e) {
-                handlerResult.post(() -> listener.onFailed(e, getRequestId()));
+                logcat.e(TAG, LOG_ERROR_FORMAT,
+                        (SystemClock.elapsedRealtime() - startTime), getUrl());
+                postToHandler(handler, () -> listener.onFailed(e, getRequestId()));
             }
         });
     }
 
+    /**
+     * Returns the URL for the HTTP request.
+     *
+     * @return The URL as a String.
+     */
     @NonNull
     @AnyThread
     protected abstract String getUrl();
 
-    @NonNull
+    /**
+     * Parses the HTTP response into the desired format.
+     *
+     * @param inputStream The input stream containing the HTTP response data.
+     * @param contentType The content type of the response.
+     * @return The parsed response of type {@code T}.
+     * @throws ParseException If there is an error parsing the response.
+     * @throws IOException If an I/O error occurs.
+     */
     @WorkerThread
-    protected abstract T parse(@NonNull InputStream inputStream, @Nullable String contentType)
-            throws ParseException, UnsupportedEncodingException;
+    protected abstract T parseResponse(@NonNull InputStream inputStream, String contentType)
+            throws ParseException, IOException;
 
     /**
-     * Content type for {@link #REQUEST_TYPE_POST} or {@link #REQUEST_TYPE_PUT}.
+     * Returns the HTTP method for the request (e.g., GET, POST, PUT).
+     *
+     * @return The HTTP method as a String.
+     */
+    @AnyThread
+    protected String getRequestMethod() {
+        return METHOD_GET;
+    }
+
+    /**
+     * Returns the connection timeout in milliseconds.
+     *
+     * @return The connection timeout in milliseconds.
+     */
+    @AnyThread
+    protected int getConnectionTimeout() {
+        return NOT_SET;
+    }
+
+    /**
+     * Returns the read timeout in milliseconds.
+     *
+     * @return The read timeout in milliseconds.
+     */
+    @AnyThread
+    protected int getReadTimeout() {
+        return NOT_SET;
+    }
+
+    /**
+     * Returns the headers to be included in the HTTP request.
+     *
+     * @return A map of header names to header values.
+     */
+    @AnyThread
+    protected Map<String, String> getHeaders() {
+        return null;
+    }
+
+    /**
+     * Returns the query parameters to be included in the URL.
+     *
+     * @return A map of query parameter names to parameter values.
+     */
+    @AnyThread
+    protected Map<String, String> getQueryParameters() {
+        return null;
+    }
+
+    /**
+     * Returns the content type for the request, if applicable.
+     *
+     * @return The content type as a String, or null if not applicable.
      */
     @Nullable
     @AnyThread
@@ -125,57 +178,21 @@ public abstract class HttpRequest<T> implements Request<T> {
     }
 
     /**
-     * Get the request method. {@link #REQUEST_TYPE_GET} as default.
+     * Writes the request body to the provided output stream.
+     * This method is only used for POST and PUT requests.
      *
-     * @see #REQUEST_TYPE_GET
-     * @see #REQUEST_TYPE_POST
-     * @see #REQUEST_TYPE_PUT
-     */
-    @AnyThread
-    protected String getRequestMethod() {
-        return REQUEST_TYPE_GET;
-    }
-
-    /**
-     * Get the connect timeout value in milliseconds.
-     */
-    @AnyThread
-    protected int getConnectionTimeout() {
-        return USE_DEFAULT_TIMEOUT;
-    }
-
-    /**
-     * Get the read timeout value in milliseconds.
-     */
-    @AnyThread
-    protected int getReadTimeout() {
-        return USE_DEFAULT_TIMEOUT;
-    }
-
-    /**
-     * Get the HTTP specified headers.
-     */
-    @AnyThread
-    protected Map<String, String> getHeaders() {
-        return null;
-    }
-
-    /**
-     * Get the HTTP request params.
-     */
-    @AnyThread
-    protected Map<String, String> getQuery() {
-        return null;
-    }
-
-    /**
-     * Writes HTTP body for {@link #REQUEST_TYPE_POST} or {@link #REQUEST_TYPE_PUT}.
+     * @param os The output stream to write the body to.
+     * @throws IOException If an I/O error occurs.
      */
     @WorkerThread
-    protected void writeBody(@NonNull OutputStream os) throws IOException {}
+    protected void writeRequestBody(@NonNull OutputStream os) throws IOException {
+        // Default implementation does nothing
+    }
 
     /**
-     * @return one of the {@link LogPolicy}
+     * Returns the logging policy for the request.
+     *
+     * @return The logging policy as an integer.
      */
     @MainThread
     protected int getLogPolicy() {
@@ -183,196 +200,239 @@ public abstract class HttpRequest<T> implements Request<T> {
     }
 
     /**
-     * Get the retry request policy.
+     * Creates the retry policy for the request.
      *
-     * @return instance of {@link RetryPolicy}; default {@code null}.
-     * @see RetryPolicy
+     * @return The retry policy, or null if no retry policy is needed.
      */
     @MainThread
-    protected RetryPolicy getRetryPolicy() {
+    protected RetryPolicy createRetryPolicy() {
         return null;
     }
 
     /**
-     * Process request to server and parsing response data.
+     * Returns the maximum number of redirects allowed for this request.
+     * This method can be overridden by subclasses to customize the redirect depth.
      *
-     * @return Response data by typed class or throw if any problems.
-     * @throws RequestException  If the request failed.
-     * @throws ResponseException If the server answer with error code.
-     * @throws ParseException    If the parse failed.
+     * @return The maximum number of redirects.
      */
-    @NonNull
-    @WorkerThread
-    private T doRequest() throws RequestException, ResponseException, ParseException {
+    @AnyThread
+    protected int getMaxRedirects() {
+        return DEFAULT_MAX_REDIRECTS;
+    }
 
-        final long startTime = SystemClock.elapsedRealtime();
-
-        String url = null;
-        int responseCode = -1;
+    /**
+     * // Default value
+     * Executes the HTTP request and handles redirects, if necessary.
+     *
+     * @param redirectCount The current redirect count.
+     * @return The parsed response of type {@code T}.
+     * @throws IOException If an I/O error occurs.
+     * @throws RequestException If there is an issue with the request.
+     * @throws ResponseException If the server returns an error.
+     * @throws ParseException If there is an error parsing the response.
+     */
+    private T executeRequest(String url, int redirectCount)
+            throws IOException, RequestException, ResponseException, ParseException {
+        if (redirectCount > getMaxRedirects()) {
+            throw new RequestException("Too many redirects");
+        }
 
         HttpURLConnection connection = null;
 
         try {
-            // Apply query to url if necessary.
-            url = applyQuery(getUrl());
-            logcat.d(TAG, "Start http request.\n URL: %s", url);
+            final String requestUrl = buildRequestUrl(url);
+            logcat.d(TAG, "Executing request: %s", requestUrl);
 
-            connection = openConnection(url);
-
-            String requestMethod = getRequestMethod();
-            connection.setRequestMethod(requestMethod);
-            if (getConnectionTimeout() != USE_DEFAULT_TIMEOUT) {
-                connection.setConnectTimeout(getConnectionTimeout());
-            }
-            if (getReadTimeout() != USE_DEFAULT_TIMEOUT) {
-                connection.setReadTimeout(getReadTimeout());
-            }
-            connection.setDoInput(true);
-
-            // apply headers.
-            applyHeaders(connection);
-
-            // write POST/PUT body
-            if (REQUEST_TYPE_POST.equalsIgnoreCase(requestMethod) ||
-                    REQUEST_TYPE_PUT.equalsIgnoreCase(requestMethod)) {
-                connection.setDoOutput(true);
-
-                String requestContentType = getRequestContentType();
-                if (requestContentType != null) {
-                    connection.setRequestProperty("Content-Type", requestContentType);
-                }
-
-                OutputStream os = connection.getOutputStream();
-                writeBody(os);
-                os.flush();
-                os.close();
-            }
-
+            connection = openConnection(requestUrl);
+            setupConnection(connection);
             connection.connect();
 
-            responseCode = connection.getResponseCode();
-            logcat.d(TAG, "Request with response code: " + responseCode);
-            if (responseCode < HttpURLConnection.HTTP_OK || responseCode > HttpURLConnection.HTTP_ACCEPTED) {
-                InputStream errorStream = connection.getErrorStream();
-                String errorMessage = errorStream != null ? IOUtils.inputStreamToString(errorStream,
-                        StandardCharsets.UTF_8) : "Unknown server error.";
-                throw new ResponseException(errorMessage, responseCode);
-            }
-
-            String encoding = connection.getContentEncoding();
-            InputStream inputStream = connection.getInputStream();
-            if (ENCODING_GZIP.equalsIgnoreCase(encoding)) {
-                inputStream = new GZIPInputStream(inputStream);
-            } else if (ENCODING_DEFLATE.equalsIgnoreCase(encoding)) {
-                inputStream = new InflaterInputStream(inputStream, new Inflater(true));
-            }
-            final T result = parse(inputStream, connection.getContentType());
-            logcat.d(TAG, "Request result:\n%s", result);
-            return result;
-
-        } catch (ResponseException e) {
-            if (retryPolicy != null && retryPolicy.checkNeedToRetry(e.getResponseCode())) {
-                logcat.e(TAG, "Request error [code: %s]. Retry: %d",
-                        e.getResponseCode(), retryPolicy.getCount());
-                return doRequest();
+            final int responseCode = connection.getResponseCode();
+            if (responseCode >= HttpURLConnection.HTTP_OK &&
+                    responseCode <= HttpURLConnection.HTTP_ACCEPTED) {
+                try (InputStream inputStream = getInputStream(connection)) {
+                    return parseResponse(inputStream, connection.getContentType());
+                }
+            } else if (responseCode >= HttpURLConnection.HTTP_MULT_CHOICE &&
+                    responseCode < HttpURLConnection.HTTP_BAD_REQUEST) {
+                // Handling redirection
+                final String newUrl = connection.getHeaderField("Location");
+                if (newUrl == null) {
+                    throw new ResponseException("Redirected without a new location", responseCode);
+                }
+                logcat.d(TAG, "Redirecting to: %s", newUrl);
+                return executeRequest(newUrl, redirectCount + 1);
             } else {
-                throw e;
+                if (retryPolicy != null && retryPolicy.checkNeedToRetry(responseCode)) {
+                    logcat.e(TAG, "Request error [code: %s]. Retry: %d",
+                            responseCode, retryPolicy.getCount());
+                    return executeRequest(url, redirectCount);
+                } else {
+                    throw new ResponseException(getErrorMessage(connection), responseCode);
+                }
             }
-        } catch (ParseException e) {
-            throw e;
-        } catch (Throwable e) {
-            throw new RequestException(e.getMessage(), e);
         } finally {
-            String format = "request took %d ms (%d)\n URL: %s ";
-            long took = SystemClock.elapsedRealtime() - startTime;
-            if (responseCode >= HttpURLConnection.HTTP_OK && responseCode <= HttpURLConnection.HTTP_ACCEPTED) {
-                logcat.d(TAG, format, took, responseCode, url);
-            } else {
-                logcat.e(TAG, format, took, responseCode, url);
-            }
             if (connection != null) connection.disconnect();
         }
     }
 
     /**
-     * Open connection to sever by specific url.
+     * Opens an HTTP connection to the specified URL.
+     *
+     * @param requestUrl The URL to connect to.
+     * @return An instance of HttpURLConnection.
+     * @throws IOException If an I/O error occurs.
      */
-    private HttpURLConnection openConnection(@NonNull String url) throws IOException {
-        URL u = new URL(url);
-        HttpURLConnection connection;
-        switch (u.getProtocol()) {
-            case SCHEME_HTTPS:
-                connection = (HttpsURLConnection) u.openConnection();
-                break;
-            case SCHEME_HTTP:
-                connection = (HttpURLConnection) u.openConnection();
-                break;
-            default:
-                throw new MalformedURLException(
-                        String.format("Unsupported protocol [%s].", u.getProtocol()));
-        }
-        return connection;
-    }
-
-    /**
-     * Apply headers to the current connection.
-     */
-    private void applyHeaders(@NonNull HttpURLConnection connection) {
-        Map<String, String> headers = getHeaders();
-        if (headers == null || headers.isEmpty()) {
-            return;
-        }
-        for (Map.Entry<String, String> entry : headers.entrySet()) {
-            connection.setRequestProperty(entry.getKey(), entry.getValue());
+    private HttpURLConnection openConnection(String requestUrl) throws IOException {
+        URL url = new URL(requestUrl);
+        if ("https".equalsIgnoreCase(url.getProtocol())) {
+            return (HttpsURLConnection) url.openConnection();
+        } else if ("http".equalsIgnoreCase(url.getProtocol())) {
+            return (HttpURLConnection) url.openConnection();
+        } else {
+            throw new MalformedURLException("Unsupported protocol: " + url.getProtocol());
         }
     }
 
     /**
-     * Apply params to the current connection.
+     * Configures the HTTP connection with the appropriate settings, such as method, timeouts,
+     * and headers.
+     *
+     * @param connection The HttpURLConnection to configure.
+     * @throws IOException If an I/O error occurs.
      */
-    private String applyQuery(@NonNull String url) throws UnsupportedEncodingException {
-        Map<String, String> query = getQuery();
-        if (query == null || query.isEmpty()) {
-            return url;
+    private void setupConnection(HttpURLConnection connection) throws IOException {
+        connection.setRequestMethod(getRequestMethod());
+        if (getConnectionTimeout() > 0) {
+            connection.setConnectTimeout(getConnectionTimeout());
         }
-        return mapToString(url, query);
-    }
-
-    /**
-     * Convert key-value pair to byte array.
-     */
-    private byte[] convertBodyToBytes(Map<String, String> formUrl)
-            throws UnsupportedEncodingException {
-        if (formUrl == null) {
-            return null;
+        if (getReadTimeout() > 0) {
+            connection.setReadTimeout(getReadTimeout());
         }
-        return mapToString(null, formUrl).getBytes();
-    }
+        connection.setDoInput(true);
+        applyHeaders(connection);
 
-    /**
-     * Convert map key/value pair to {@link String}.
-     */
-    private String mapToString(String startWith, @NonNull Map<String, String> map)
-            throws UnsupportedEncodingException {
-        StringBuilder builder = new StringBuilder();
-        if (startWith != null) {
-            builder.append(startWith);
-            if (!startWith.contains("?")) {
-                builder.append('?');
-            } else {
-                builder.append('&');
+        if (isBodyRequired()) {
+            connection.setDoOutput(true);
+            if (getRequestContentType() != null) {
+                connection.setRequestProperty("Content-Type", getRequestContentType());
+            }
+            try (OutputStream os = connection.getOutputStream()) {
+                writeRequestBody(os);
             }
         }
-        for (String key : map.keySet()) {
-            builder.append(key)
-                    .append("=")
-                    .append(URLEncoder.encode(map.get(key), StandardCharsets.UTF_8.name()))
-                    .append("&");
-        }
-        builder.deleteCharAt(builder.lastIndexOf("&"));
-        return builder.toString();
     }
 
+    /**
+     * Determines if the request requires a request body (i.e., for POST or PUT methods).
+     *
+     * @return True if the request method is POST or PUT, otherwise false.
+     */
+    private boolean isBodyRequired() {
+        String method = getRequestMethod();
+        return METHOD_POST.equalsIgnoreCase(method) || METHOD_PUT.equalsIgnoreCase(method);
+    }
+
+    /**
+     * Applies headers to the HTTP connection.
+     *
+     * @param connection The HttpURLConnection to apply headers to.
+     */
+    private void applyHeaders(HttpURLConnection connection) {
+        final Map<String, String> headers = getHeaders();
+        if (headers == null) {
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            headers.forEach(connection::setRequestProperty);
+        } else {
+            for (String key : headers.keySet()) {
+                connection.setRequestProperty(key, headers.get(key));
+            }
+        }
+    }
+
+    /**
+     * Returns the input stream for the HTTP connection, handling any necessary decompression.
+     *
+     * @param connection The HttpURLConnection to read the input stream from.
+     * @return The input stream, potentially wrapped in a decompression stream.
+     * @throws IOException If an I/O error occurs.
+     */
+    private InputStream getInputStream(HttpURLConnection connection) throws IOException {
+        String encoding = connection.getContentEncoding();
+        InputStream inputStream = connection.getInputStream();
+        if (ENCODING_GZIP.equalsIgnoreCase(encoding)) {
+            return new GZIPInputStream(inputStream);
+        } else if (ENCODING_DEFLATE.equalsIgnoreCase(encoding)) {
+            return new InflaterInputStream(inputStream, new Inflater(true));
+        } else {
+            return inputStream;
+        }
+    }
+
+    /**
+     * Builds the full request URL, including query parameters.
+     *
+     * @return The full request URL as a String.
+     * @throws IOException If an encoding error occurs.
+     */
+    private String buildRequestUrl(String url) throws IOException {
+
+        final Map<String, String> queryParams = getQueryParameters();
+        if (queryParams == null) {
+            return url;
+        }
+
+        final StringBuilder urlBuilder = new StringBuilder(url);
+        if (!queryParams.isEmpty()) {
+            urlBuilder.append("?");
+            for (Map.Entry<String, String> entry : queryParams.entrySet()) {
+                urlBuilder.append(URLEncoder.encode(entry.getKey(), StandardCharsets.UTF_8.name()))
+                        .append("=")
+                        .append(URLEncoder.encode(entry.getValue(), StandardCharsets.UTF_8.name()))
+                        .append("&");
+            }
+            urlBuilder.setLength(urlBuilder.length() - 1); // remove trailing "&"
+        }
+
+        return urlBuilder.toString();
+    }
+
+    /**
+     * Retrieves the error message from the HTTP connection if the request failed.
+     *
+     * @param connection The HttpURLConnection to retrieve the error message from.
+     * @return The error message as a String.
+     * @throws IOException If an I/O error occurs.
+     */
+    private String getErrorMessage(HttpURLConnection connection) throws IOException {
+        try (InputStream errorStream = connection.getErrorStream()) {
+            return errorStream != null ?
+                    IOUtils.inputStreamToString(errorStream, StandardCharsets.UTF_8) :
+                    "Unknown server error";
+        }
+    }
+
+    /**
+     * Posts a task to the provided handler, or runs it immediately if the handler is null.
+     *
+     * @param handler The handler to post the task to.
+     * @param task The task to run.
+     */
+    private static void postToHandler(@Nullable Handler handler, Runnable task) {
+        if (handler != null) {
+            handler.post(task);
+        } else {
+            task.run();
+        }
+    }
+
+    /**
+     * Returns a string representation of the HttpRequest, primarily for debugging purposes.
+     *
+     * @return A string representation of the HttpRequest.
+     */
     @NonNull
     @Override
     public String toString() {

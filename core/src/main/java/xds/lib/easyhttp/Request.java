@@ -1,13 +1,14 @@
 package xds.lib.easyhttp;
 
 import android.os.Handler;
-
-import java.util.concurrent.Executor;
+import android.os.Looper;
 
 import androidx.annotation.AnyThread;
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import androidx.annotation.WorkerThread;
+
+import java.util.concurrent.Executor;
+
 import xds.lib.easyhttp.async.ResponseListener;
 import xds.lib.easyhttp.exception.ParseException;
 import xds.lib.easyhttp.exception.RequestException;
@@ -16,40 +17,43 @@ import xds.lib.easyhttp.exception.ResponseException;
 /**
  * The abstract base interface of execute request.
  *
- * @param <T> The class of response.
+ * @param <T> The type of response expected from the request
  */
 public interface Request<T> {
 
     /**
-     * Execute request synchronous.
+     * Synchronously executes the request and returns the parsed response.
      *
-     * @return Response data by typed class or throw if some problems.
-     * @throws RequestException  If the request failed.
-     * @throws ResponseException If the server answer with error code.
-     * @throws ParseException    If the parse failed.
+     * @return Parsed response of type {@code T}.
+     * @throws RequestException If there is an issue with the request.
+     * @throws ResponseException If the server returns an error.
+     * @throws ParseException If there is an error parsing the response.
      */
-    @NonNull
     @WorkerThread
     T execute() throws RequestException, ResponseException, ParseException;
 
     /**
-     * Execute request asynchronous.
+     * Asynchronously executes the request.
      *
-     * @param executor Executor for run task in background {@link java.util.concurrent.Executor}.
-     * @param listener Callback result.
+     * @param executor Executor for managing the background task.
+     * @param listener Listener to handle the response or any errors.
      */
     @AnyThread
-    void executeAsync(@NonNull Executor executor, @NonNull ResponseListener<T> listener);
+    default void executeAsync(@NonNull Executor executor, @NonNull ResponseListener<T> listener) {
+        executeAsync(executor, new Handler(Looper.getMainLooper()), listener);
+    }
 
     /**
-     * Execute request asynchronous.
+     * Asynchronously executes the request.
      *
-     * @param executor Executor for run task in background {@link java.util.concurrent.Executor}.
-     * @param handler  Handler for call callback on needed thread.
-     * @param listener Callback result.
+     * @param executor Executor for managing the background task.
+     * @param handler Handler to post the result or error back to the some thread.
+     * @param listener Listener to handle the response or any errors.
+     * @see java.util.concurrent.Executor
      */
     @AnyThread
-    void executeAsync(@NonNull Executor executor, @Nullable Handler handler, @NonNull ResponseListener<T> listener);
+    void executeAsync(@NonNull Executor executor, Handler handler,
+            @NonNull ResponseListener<T> listener);
 
     /**
      * The ID identifier of request.
