@@ -38,6 +38,6 @@ public final class JsonHttpRequest extends HttpRequest<String> {
 
     @Override
     protected RetryPolicy createRetryPolicy() {
-        return RetryPolicy.create500();
+        return RetryPolicy.create50x(3/*count*/, 1000L/*delay*/);
     }
 }

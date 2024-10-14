@@ -1,6 +1,5 @@
 package xds.lib.easyhttp;
 
-import android.os.Build;
 import android.os.Handler;
 import android.os.SystemClock;
 
@@ -263,13 +262,14 @@ public abstract class HttpRequest<T> implements Request<T> {
                 logcat.d(TAG, "Redirecting to: %s", newUrl);
                 return executeRequest(newUrl, redirectCount + 1);
             } else {
-                if (retryPolicy != null && retryPolicy.checkNeedToRetry(responseCode)) {
-                    logcat.e(TAG, "Request error [code: %s]. Retry: %d",
-                            responseCode, retryPolicy.getCount());
-                    return executeRequest(url, redirectCount);
-                } else {
-                    throw new ResponseException(getErrorMessage(connection), responseCode);
-                }
+                throw new ResponseException(getErrorMessage(connection), responseCode);
+            }
+        } catch (IOException | RequestException | ResponseException e) {
+            if (retryPolicy != null && retryPolicy.checkNeedToRetry(e)) {
+                logcat.w(TAG, "Request error, retry: %d\n%s", retryPolicy.getCount(), e);
+                return executeRequest(url, 0);
+            } else {
+                throw e;
             }
         } finally {
             if (connection != null) connection.disconnect();
@@ -343,12 +343,8 @@ public abstract class HttpRequest<T> implements Request<T> {
         if (headers == null) {
             return;
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            headers.forEach(connection::setRequestProperty);
-        } else {
-            for (String key : headers.keySet()) {
-                connection.setRequestProperty(key, headers.get(key));
-            }
+        for (String key : headers.keySet()) {
+            connection.setRequestProperty(key, headers.get(key));
         }
     }
 

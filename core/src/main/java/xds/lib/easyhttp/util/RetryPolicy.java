@@ -1,120 +1,89 @@
 package xds.lib.easyhttp.util;
 
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
-import java.net.HttpURLConnection;
-import java.util.Arrays;
-
 import androidx.annotation.AnyThread;
-import androidx.annotation.IntDef;
 import androidx.annotation.WorkerThread;
+
+import java.net.HttpURLConnection;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Predicate;
+
+import xds.lib.easyhttp.exception.ResponseException;
 
 /**
  * Policy of retry request.
  */
 public final class RetryPolicy {
 
-    private static final int DEFAULT_COUNT = 3;
+    private final Predicate<Throwable> predicate;
+    private final AtomicInteger count;
+    private final long delay;
 
-    private final int[] reasons;
-    private final Delay delay;
+    /**
+     * Create instance if {@code RetryPolicy} with the specified params.
+     *
+     * @param predicate the predicate used to determine whether a retry should be attempted based
+     * on the given throwable.
+     * @param count the maximum number of retry attempts.
+     * @param delay the delay in milliseconds between retry attempts.
+     */
+    public static RetryPolicy create(Predicate<Throwable> predicate, int count, long delay) {
+        return new RetryPolicy(predicate, count, delay);
+    }
 
-    private volatile int count;
+    /**
+     * Create instance if {@code RetryPolicy} with the 500x status code.
+     *
+     * @param count the maximum number of retry attempts.
+     * @param delay the delay in milliseconds between retry attempts.
+     */
+    public static RetryPolicy create50x(int count, long delay) {
+        return new RetryPolicy(throwable -> {
+            if (throwable instanceof ResponseException) {
+                final int responseCode = ((ResponseException) throwable).getResponseCode();
+                switch (responseCode) {
+                    case HttpURLConnection.HTTP_INTERNAL_ERROR:
+                    case HttpURLConnection.HTTP_NOT_IMPLEMENTED:
+                    case HttpURLConnection.HTTP_BAD_GATEWAY:
+                    case HttpURLConnection.HTTP_UNAVAILABLE:
+                    case HttpURLConnection.HTTP_GATEWAY_TIMEOUT:
+                    case HttpURLConnection.HTTP_VERSION:
+                        return true;
+                }
+            }
+            return false;
+        }, count, Math.max(0, delay));
+    }
 
-    private RetryPolicy(int count, Delay delay, @Reason int... reasons) {
-        this.count = count;
-        this.reasons = reasons;
+    private RetryPolicy(Predicate<Throwable> predicate, int count, long delay) {
+        this.predicate = predicate;
+        this.count = new AtomicInteger(count);
         this.delay = delay;
-        Arrays.sort(reasons);
-    }
-
-    private RetryPolicy(@Reason int... reasons) {
-        this(DEFAULT_COUNT, Delay.proportionality, reasons);
-    }
-
-    public static RetryPolicy create(int count, Delay time, @Reason int... reasons) {
-        return new RetryPolicy(count, time, reasons);
-    }
-
-    public static RetryPolicy create(@Reason int... reasons) {
-        return new RetryPolicy(reasons);
-    }
-
-    public static RetryPolicy create500() {
-        return RetryPolicy.create(
-                HttpURLConnection.HTTP_INTERNAL_ERROR,
-                HttpURLConnection.HTTP_NOT_IMPLEMENTED,
-                HttpURLConnection.HTTP_BAD_GATEWAY,
-                HttpURLConnection.HTTP_UNAVAILABLE,
-                HttpURLConnection.HTTP_GATEWAY_TIMEOUT,
-                HttpURLConnection.HTTP_VERSION
-        );
     }
 
     @WorkerThread
-    public boolean checkNeedToRetry(int reason) {
-        if (Arrays.binarySearch(reasons, reason) == -1/*not found*/) {
+    public boolean checkNeedToRetry(Throwable throwable) {
+        if (!predicate.test(throwable)) {
             return false;
         }
-        if (count > 0) {
-            prepare();
-            return true;
+        if (count.getAndDecrement() > 0) {
+            return prepare();
         }
         return false;
     }
 
     @AnyThread
     public int getCount() {
-        return count;
+        return count.get();
     }
 
     @WorkerThread
-    private void prepare() {
+    private boolean prepare() {
         try {
-            Thread.sleep(delay.waiting(count--));
+            Thread.sleep(delay);
+            return true;
         } catch (InterruptedException e) {
-            count = 0;
+            count.set(0);
+            return false;
         }
     }
-
-    public enum Delay {
-
-        proportionality(2L);
-
-        private final long factor;
-
-        Delay(long factor) {
-            this.factor = factor;
-        }
-
-        private long waiting(int count) {
-            return (long) ((float) factor / count + count / 10f) * 1000L;
-        }
-    }
-
-    @Retention(RetentionPolicy.SOURCE)
-    @IntDef({
-            /*201+*/
-            HttpURLConnection.HTTP_CREATED,
-            HttpURLConnection.HTTP_ACCEPTED,
-            HttpURLConnection.HTTP_NOT_AUTHORITATIVE,
-            HttpURLConnection.HTTP_NO_CONTENT,
-            HttpURLConnection.HTTP_RESET,
-            HttpURLConnection.HTTP_PARTIAL,
-            /*300+*/
-            HttpURLConnection.HTTP_MULT_CHOICE,
-            HttpURLConnection.HTTP_MOVED_PERM,
-            HttpURLConnection.HTTP_MOVED_TEMP,
-            HttpURLConnection.HTTP_SEE_OTHER,
-            HttpURLConnection.HTTP_NOT_MODIFIED,
-            HttpURLConnection.HTTP_USE_PROXY,
-            /*500+*/
-            HttpURLConnection.HTTP_INTERNAL_ERROR,
-            HttpURLConnection.HTTP_NOT_IMPLEMENTED,
-            HttpURLConnection.HTTP_BAD_GATEWAY,
-            HttpURLConnection.HTTP_UNAVAILABLE,
-            HttpURLConnection.HTTP_GATEWAY_TIMEOUT,
-            HttpURLConnection.HTTP_VERSION
-    })
-    public @interface Reason {}
 }
