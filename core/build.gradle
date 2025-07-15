@@ -2,7 +2,7 @@ apply plugin: 'com.android.library'
 apply plugin: 'maven-publish'
 
 def getVersionName = { ->
-    return "2.1.0"
+    return "2.1.1"
 }
 
 def getArtifactId = { ->
@@ -11,19 +11,49 @@ def getArtifactId = { ->
 
 android {
 
+    namespace 'xds.lib.easyhttp'
     compileSdkVersion 34
 
     defaultConfig {
         minSdkVersion 24
-        targetSdkVersion 31
-        versionCode 3
+        targetSdkVersion 34
+        versionCode 4
         versionName getVersionName()
     }
 
     compileOptions {
-        sourceCompatibility = 1.8
-        targetCompatibility = 1.8
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
+}
+
+tasks.register("androidJavadoc", Javadoc) {
+    dependsOn(tasks.named("compileReleaseJavaWithJavac"))
+    source = android.sourceSets.main.java.srcDirs
+    classpath = files(
+            android.bootClasspath,
+            configurations.named("releaseCompileClasspath"),
+            layout.buildDirectory.dir("intermediates/javac/release/compileReleaseJavaWithJavac/classes")
+    )
+    options.encoding = "UTF-8"
+    options.addStringOption("Xdoclint:none", "-quiet")
+    failOnError = false
+    exclude "**/BuildConfig.java"
+    destinationDir = layout.buildDirectory
+            .dir("docs/javadoc")
+            .get()
+            .asFile
+}
+
+tasks.register("javadocJar", Jar) {
+    dependsOn(tasks.named("androidJavadoc"))
+    archiveClassifier.set('javadoc')
+    from(tasks.named("androidJavadoc").map { it.destinationDir })
+}
+
+tasks.register("sourcesJar", Jar) {
+    archiveClassifier.set('sources')
+    from(android.sourceSets.main.java.srcDirs)
 }
 
 publishing {
@@ -45,6 +75,8 @@ publishing {
             artifactId = getArtifactId()
             version = getVersionName()
             artifact("$buildDir/outputs/aar/core-release.aar")
+            artifact(tasks.named("javadocJar"))
+            artifact(tasks.named("sourcesJar"))
         }
     }
 }

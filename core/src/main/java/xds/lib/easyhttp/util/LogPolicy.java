@@ -13,7 +13,8 @@ public final class LogPolicy {
     public static final int ADAPTIVE = 0;
 
     /**
-     * Show warning & error log level for release build variant and all log level for debug build variant.
+     * Show warning and error log level for release build variant and all log level
+     * for debug build variant.
      */
     public static final int MEDIUM = 1;
 

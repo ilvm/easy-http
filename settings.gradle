@@ -1,3 +1,27 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        google()
+        mavenCentral()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+        maven {
+            name 'GitHubPackages'
+            url 'https://maven.pkg.github.com/ilvm/easy-http'
+            credentials {
+                username = System.getenv("GPR_USERNAME")
+                password = System.getenv("GPR_TOKEN")
+            }
+        }
+    }
+}
+
 rootProject.name='EasyHTTP'
 include ':sample'
 include ':core'

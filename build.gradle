@@ -1,28 +1,4 @@
-buildscript {
-    repositories {
-        google()
-        mavenCentral()
-    }
-    dependencies {
-        classpath 'com.android.tools.build:gradle:7.0.3'
-    }
-}
-
-allprojects {
-    repositories {
-        google()
-        mavenCentral()
-        maven {
-            name 'GitHubPackages'
-            url 'https://maven.pkg.github.com/ilvm/easy-http'
-            credentials {
-                username project.findProperty("gpr.user") ?: System.getenv("GPR_USERNAME")
-                password project.findProperty("gpr.key") ?: System.getenv("GPR_TOKEN")
-            }
-        }
-    }
-}
-
-task clean(type: Delete) {
-    delete rootProject.buildDir
+plugins {
+    id 'com.android.application' version '8.3.2' apply false
+    id 'com.android.library' version '8.3.2' apply false
 }
