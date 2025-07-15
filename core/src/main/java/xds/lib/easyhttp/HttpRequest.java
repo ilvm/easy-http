@@ -219,8 +219,21 @@ public abstract class HttpRequest<T> implements Request<T> {
         return DEFAULT_MAX_REDIRECTS;
     }
 
+
     /**
-     * // Default value
+     * Called when an HTTP response status code is received.
+     *
+     * @param url The URL that was requested
+     * @param statusCode The HTTP response status code (e.g., 200, 404, 500)
+     * @return {@code true} if further processing of the request should be aborted;
+     * {@code false} to continue with default processing
+     */
+    @WorkerThread
+    protected boolean onResponseStatus(String url, int statusCode) {
+        return false;
+    }
+
+    /**
      * Executes the HTTP request and handles redirects, if necessary.
      *
      * @param redirectCount The current redirect count.
@@ -247,6 +260,13 @@ public abstract class HttpRequest<T> implements Request<T> {
             connection.connect();
 
             final int responseCode = connection.getResponseCode();
+            if (onResponseStatus(url, responseCode)) {
+                throw new IOException(String.format(
+                        "Request: %s was interrupted manually by response code: %s",
+                        url,
+                        responseCode
+                ));
+            }
             if (responseCode >= HttpURLConnection.HTTP_OK &&
                     responseCode <= HttpURLConnection.HTTP_ACCEPTED) {
                 try (InputStream inputStream = getInputStream(connection)) {
