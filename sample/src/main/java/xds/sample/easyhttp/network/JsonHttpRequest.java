@@ -9,24 +9,21 @@ import java.io.IOException;
 import java.io.InputStream;
 
 import xds.lib.easyhttp.HttpRequest;
-import xds.lib.easyhttp.exception.ParseException;
+import xds.lib.easyhttp.ParseException;
 import xds.lib.easyhttp.util.IOUtils;
 import xds.lib.easyhttp.util.RetryPolicy;
 
 public final class JsonHttpRequest extends HttpRequest<String> {
 
-    private static final String HOST = "https://apidata.mos.ru";
-    private static final String PATH = "/version";
-
     @NonNull
     @Override
     protected String getUrl() {
-        return HOST.concat(PATH);
+        return "https://timeapi.io/api/v1/Time/current/unix";
     }
 
     @Override
     protected String parseResponse(@NonNull InputStream inputStream, String contentType)
-            throws ParseException, IOException {
+            throws ParseException {
         try {
             String json = IOUtils.inputStreamToString(inputStream);
             JSONObject result = new JSONObject(json);

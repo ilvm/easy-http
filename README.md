@@ -40,7 +40,7 @@ public class MyGetRequest extends HttpRequest<String> {
     }
 }
 ``` 
-### 2. Execute the Request Synchronously
+### 2. Execute the Request
 You can execute the request synchronously using the execute method:
 ```java
 MyGetRequest request = new MyGetRequest();
@@ -50,22 +50,6 @@ try {
 } catch (RequestException | ResponseException| ParseException e) {
     // Handle errors
 }
-```
-### 3. Execute the Request Asynchronously
-You can also execute the request asynchronously using the executeAsync method:
-```java
-MyGetRequest request = new MyGetRequest();
-request.executeAsync(Executors.newSingleThreadExecutor(), new ResponseListener<String>() {
-    @Override
-    public void onSuccess(String response, String requestId) {
-        // Handle the response
-    }
-
-    @Override
-    public void onFailed(Throwable throwable, String requestId) {
-        // Handle errors
-    }
-});
 ```
 ### 4. Customizing the Request
 You can override additional methods to customize the behavior of your request:

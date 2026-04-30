@@ -1,9 +1,9 @@
 package xds.lib.easyhttp.exception;
 
-/**
- * The exception of request failed.
- */
-public final class RequestException extends Exception {
+import java.io.IOException;
+
+/** Thrown when an error occurs during request execution. */
+public class RequestException extends IOException {
 
     public RequestException(String message) {
         super(message);

@@ -1,36 +1,26 @@
 package xds.lib.easyhttp;
 
-import android.os.Handler;
-import android.os.SystemClock;
-
-import androidx.annotation.AnyThread;
-import androidx.annotation.MainThread;
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
-import androidx.annotation.WorkerThread;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
+import java.net.URI;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
-import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.Inflater;
 import java.util.zip.InflaterInputStream;
 
 import javax.net.ssl.HttpsURLConnection;
 
-import xds.lib.easyhttp.async.ResponseListener;
 import xds.lib.easyhttp.exception.ParseException;
 import xds.lib.easyhttp.exception.RequestException;
 import xds.lib.easyhttp.exception.ResponseException;
 import xds.lib.easyhttp.util.IOUtils;
-import xds.lib.easyhttp.util.LogPolicy;
 import xds.lib.easyhttp.util.RetryPolicy;
 
 /**
@@ -39,8 +29,6 @@ import xds.lib.easyhttp.util.RetryPolicy;
  * @param <T> The type of response expected from the request.
  */
 public abstract class HttpRequest<T> implements Request<T> {
-
-    protected final String TAG = getClass().getSimpleName();
 
     protected static final String METHOD_GET = "GET";
     protected static final String METHOD_POST = "POST";
@@ -52,45 +40,20 @@ public abstract class HttpRequest<T> implements Request<T> {
     private static final String ENCODING_GZIP = "gzip";
     private static final String ENCODING_DEFLATE = "deflate";
 
-    private static final String LOG_RESULT_FORMAT = "Request took %d ms\n URL: %s";
-    private static final String LOG_ERROR_FORMAT = "Request error took %d ms\n URL: %s";
-
     private final RetryPolicy retryPolicy;
-    private final Logcat logcat;
 
     /** Default constructor for HttpRequest. */
     protected HttpRequest() {
         this.retryPolicy = createRetryPolicy();
-        this.logcat = new Logcat(getLogPolicy());
     }
 
     /** {@inheritDoc} */
-    @WorkerThread
     public final T execute() throws RequestException, ResponseException, ParseException {
         try {
-            return executeRequest(getUrl(), 0);
+            return executeRequest(getUrl(), 0, System.nanoTime());
         } catch (IOException e) {
             throw new RequestException("IO error during request execution", e);
         }
-    }
-
-    /** {@inheritDoc} */
-    public final void executeAsync(@NonNull Executor executor, Handler handler,
-            @NonNull ResponseListener<T> listener) {
-        executor.execute(() -> {
-
-            final long startTime = SystemClock.elapsedRealtime();
-            try {
-                final T result = execute();
-                logcat.d(TAG, LOG_RESULT_FORMAT,
-                        (SystemClock.elapsedRealtime() - startTime), getUrl());
-                postToHandler(handler, () -> listener.onSuccess(result, getRequestId()));
-            } catch (RequestException | ResponseException | ParseException e) {
-                logcat.e(TAG, LOG_ERROR_FORMAT,
-                        (SystemClock.elapsedRealtime() - startTime), getUrl());
-                postToHandler(handler, () -> listener.onFailed(e, getRequestId()));
-            }
-        });
     }
 
     /**
@@ -98,21 +61,19 @@ public abstract class HttpRequest<T> implements Request<T> {
      *
      * @return The URL as a String.
      */
-    @NonNull
-    @AnyThread
     protected abstract String getUrl();
 
     /**
      * Parses the HTTP response into the desired format.
      *
-     * @param inputStream The input stream containing the HTTP response data.
-     * @param contentType The content type of the response.
+     * @param inputStream The input stream containing the response body.
+     * @param info Response metadata such as content type, content length,
+     * and request execution time.
      * @return The parsed response of type {@code T}.
-     * @throws ParseException If there is an error parsing the response.
-     * @throws IOException If an I/O error occurs.
+     * @throws ParseException If an error occurs while parsing the response.
+     * @throws IOException If an I/O error occurs while reading the response.
      */
-    @WorkerThread
-    protected abstract T parseResponse(@NonNull InputStream inputStream, String contentType)
+    protected abstract T parseResponse(InputStream inputStream, ResponseInfo info)
             throws ParseException, IOException;
 
     /**
@@ -120,7 +81,6 @@ public abstract class HttpRequest<T> implements Request<T> {
      *
      * @return The HTTP method as a String.
      */
-    @AnyThread
     protected String getRequestMethod() {
         return METHOD_GET;
     }
@@ -130,7 +90,6 @@ public abstract class HttpRequest<T> implements Request<T> {
      *
      * @return The connection timeout in milliseconds.
      */
-    @AnyThread
     protected int getConnectionTimeout() {
         return NOT_SET;
     }
@@ -140,7 +99,6 @@ public abstract class HttpRequest<T> implements Request<T> {
      *
      * @return The read timeout in milliseconds.
      */
-    @AnyThread
     protected int getReadTimeout() {
         return NOT_SET;
     }
@@ -150,7 +108,6 @@ public abstract class HttpRequest<T> implements Request<T> {
      *
      * @return A map of header names to header values.
      */
-    @AnyThread
     protected Map<String, String> getHeaders() {
         return null;
     }
@@ -160,7 +117,6 @@ public abstract class HttpRequest<T> implements Request<T> {
      *
      * @return A map of query parameter names to parameter values.
      */
-    @AnyThread
     protected Map<String, String> getQueryParameters() {
         return null;
     }
@@ -170,8 +126,6 @@ public abstract class HttpRequest<T> implements Request<T> {
      *
      * @return The content type as a String, or null if not applicable.
      */
-    @Nullable
-    @AnyThread
     protected String getRequestContentType() {
         return null;
     }
@@ -183,19 +137,8 @@ public abstract class HttpRequest<T> implements Request<T> {
      * @param os The output stream to write the body to.
      * @throws IOException If an I/O error occurs.
      */
-    @WorkerThread
-    protected void writeRequestBody(@NonNull OutputStream os) throws IOException {
+    protected void writeRequestBody(OutputStream os) throws IOException {
         // Default implementation does nothing
-    }
-
-    /**
-     * Returns the logging policy for the request.
-     *
-     * @return The logging policy as an integer.
-     */
-    @MainThread
-    protected int getLogPolicy() {
-        return LogPolicy.ADAPTIVE;
     }
 
     /**
@@ -203,7 +146,6 @@ public abstract class HttpRequest<T> implements Request<T> {
      *
      * @return The retry policy, or null if no retry policy is needed.
      */
-    @MainThread
     protected RetryPolicy createRetryPolicy() {
         return null;
     }
@@ -214,7 +156,6 @@ public abstract class HttpRequest<T> implements Request<T> {
      *
      * @return The maximum number of redirects.
      */
-    @AnyThread
     protected int getMaxRedirects() {
         return DEFAULT_MAX_REDIRECTS;
     }
@@ -228,7 +169,6 @@ public abstract class HttpRequest<T> implements Request<T> {
      * @return {@code true} if further processing of the request should be aborted;
      * {@code false} to continue with default processing
      */
-    @WorkerThread
     protected boolean onResponseStatus(String url, int statusCode) {
         return false;
     }
@@ -243,7 +183,7 @@ public abstract class HttpRequest<T> implements Request<T> {
      * @throws ResponseException If the server returns an error.
      * @throws ParseException If there is an error parsing the response.
      */
-    private T executeRequest(String url, int redirectCount)
+    private T executeRequest(String url, int redirectCount, long startNs)
             throws IOException, RequestException, ResponseException, ParseException {
         if (redirectCount > getMaxRedirects()) {
             throw new RequestException("Too many redirects");
@@ -253,24 +193,27 @@ public abstract class HttpRequest<T> implements Request<T> {
 
         try {
             final String requestUrl = buildRequestUrl(url);
-            logcat.d(TAG, "Executing request: %s", requestUrl);
 
             connection = openConnection(requestUrl);
             setupConnection(connection);
             connection.connect();
 
             final int responseCode = connection.getResponseCode();
+
+            final long rtt = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNs);
+
             if (onResponseStatus(url, responseCode)) {
-                throw new IOException(String.format(
-                        "Request: %s was interrupted manually by response code: %s",
-                        url,
-                        responseCode
-                ));
+                throw new RequestException(
+                        "Request processing was aborted due to response status: " + responseCode);
             }
-            if (responseCode >= HttpURLConnection.HTTP_OK &&
-                    responseCode <= HttpURLConnection.HTTP_ACCEPTED) {
+            if (responseCode >= 200 && responseCode < 300) {
                 try (InputStream inputStream = getInputStream(connection)) {
-                    return parseResponse(inputStream, connection.getContentType());
+                    return parseResponse(
+                            inputStream,
+                            new ResponseInfo(
+                                    connection.getContentType(), connection.getContentLength(), rtt
+                            )
+                    );
                 }
             } else if (responseCode >= HttpURLConnection.HTTP_MULT_CHOICE &&
                     responseCode < HttpURLConnection.HTTP_BAD_REQUEST) {
@@ -279,15 +222,18 @@ public abstract class HttpRequest<T> implements Request<T> {
                 if (newUrl == null) {
                     throw new ResponseException("Redirected without a new location", responseCode);
                 }
-                logcat.d(TAG, "Redirecting to: %s", newUrl);
-                return executeRequest(newUrl, redirectCount + 1);
+                return executeRequest(newUrl, redirectCount + 1, startNs);
             } else {
-                throw new ResponseException(getErrorMessage(connection), responseCode);
+                String errorMessage = getErrorMessage(connection);
+                throw new ResponseException(
+                        "HTTP error: " + responseCode +
+                                (errorMessage != null ? ".\n" + errorMessage : ""),
+                        responseCode
+                );
             }
-        } catch (IOException | RequestException | ResponseException e) {
+        } catch (IOException | ResponseException e) {
             if (retryPolicy != null && retryPolicy.checkNeedToRetry(e)) {
-                logcat.w(TAG, "Request error, retry: %d\n%s", retryPolicy.getCount(), e);
-                return executeRequest(url, 0);
+                return executeRequest(url, 0, startNs);
             } else {
                 throw e;
             }
@@ -304,7 +250,7 @@ public abstract class HttpRequest<T> implements Request<T> {
      * @throws IOException If an I/O error occurs.
      */
     private HttpURLConnection openConnection(String requestUrl) throws IOException {
-        URL url = new URL(requestUrl);
+        URL url = URI.create(requestUrl).toURL();
         if ("https".equalsIgnoreCase(url.getProtocol())) {
             return (HttpsURLConnection) url.openConnection();
         } else if ("http".equalsIgnoreCase(url.getProtocol())) {
@@ -420,27 +366,13 @@ public abstract class HttpRequest<T> implements Request<T> {
      *
      * @param connection The HttpURLConnection to retrieve the error message from.
      * @return The error message as a String.
-     * @throws IOException If an I/O error occurs.
      */
-    private String getErrorMessage(HttpURLConnection connection) throws IOException {
+    private String getErrorMessage(HttpURLConnection connection) {
         try (InputStream errorStream = connection.getErrorStream()) {
             return errorStream != null ?
-                    IOUtils.inputStreamToString(errorStream, StandardCharsets.UTF_8) :
-                    "Unknown server error";
-        }
-    }
-
-    /**
-     * Posts a task to the provided handler, or runs it immediately if the handler is null.
-     *
-     * @param handler The handler to post the task to.
-     * @param task The task to run.
-     */
-    private static void postToHandler(@Nullable Handler handler, Runnable task) {
-        if (handler != null) {
-            handler.post(task);
-        } else {
-            task.run();
+                    IOUtils.readString(errorStream, StandardCharsets.UTF_8) : null;
+        } catch (IOException e) {
+            return null;
         }
     }
 
@@ -449,9 +381,49 @@ public abstract class HttpRequest<T> implements Request<T> {
      *
      * @return A string representation of the HttpRequest.
      */
-    @NonNull
     @Override
     public String toString() {
-        return String.format("HttpRequest [URL = %s]", getUrl());
+        return getClass().getSimpleName() + " [URL = " + getUrl() + "]";
+    }
+
+    /**
+     * Contains metadata associated with an HTTP response.
+     */
+    protected static final class ResponseInfo {
+
+        private final String contentType;
+        private final int contentLength;
+        private final long rtt;
+
+        private ResponseInfo(String contentType, int contentLength, long rtt) {
+            this.contentType = contentType;
+            this.contentLength = contentLength;
+            this.rtt = rtt;
+        }
+
+        /**
+         * The value of the {@code Content-Type} response header,
+         * or {@code null} if not specified by the server.
+         */
+        public String getContentType() {
+            return contentType;
+        }
+
+        /**
+         * The response content length in bytes as reported by the server,
+         * or {@code -1} if the length is unknown.
+         */
+        public int getContentLength() {
+            return contentLength;
+        }
+
+        /**
+         * The total time spent executing the request in milliseconds.
+         * Includes connection establishment, request transmission,
+         * server processing, and receiving response headers.
+         */
+        public long getRtt() {
+            return rtt;
+        }
     }
 }

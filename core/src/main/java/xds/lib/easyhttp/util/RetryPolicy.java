@@ -1,8 +1,5 @@
 package xds.lib.easyhttp.util;
 
-import androidx.annotation.AnyThread;
-import androidx.annotation.WorkerThread;
-
 import java.net.HttpURLConnection;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
@@ -60,7 +57,6 @@ public final class RetryPolicy {
         this.delay = delay;
     }
 
-    @WorkerThread
     public boolean checkNeedToRetry(Throwable throwable) {
         if (!predicate.test(throwable)) {
             return false;
@@ -71,12 +67,6 @@ public final class RetryPolicy {
         return false;
     }
 
-    @AnyThread
-    public int getCount() {
-        return count.get();
-    }
-
-    @WorkerThread
     private boolean prepare() {
         try {
             Thread.sleep(delay);

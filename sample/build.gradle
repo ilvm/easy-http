@@ -28,6 +28,6 @@ android {
 
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
-    implementation 'xds.lib:easyhttp:2.1.0'
+    implementation 'xds.lib:easyhttp:3.0.0'
     implementation 'androidx.annotation:annotation:1.8.2'
 }

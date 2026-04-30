@@ -1,9 +1,7 @@
 package xds.lib.easyhttp.exception;
 
-/**
- * The exception of parsing failed.
- */
-public final class ParseException extends Exception {
+/** Thrown when an error occurs while parsing the HTTP response. */
+public class ParseException extends Exception {
 
     public ParseException(String message) {
         super(message);
